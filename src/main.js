@@ -246,7 +246,19 @@ export function createPlugin(host) {
       }
 
       const newTopics = discoveryTopics(configs);
-      const previousTopics = runtime.lastDiscoveryTopics ?? [];
+      // The first version that persisted discovery topics cannot know what an
+      // older version retained. Derive the complete topic inventory for this
+      // device so an initial sync can still remove entities that are no longer
+      // present (for example profile_select when the profile list is empty).
+      const knownConfigs = buildDiscoveryConfigs({
+        config,
+        deviceInfo: null,
+        profileTitles: ["__discovery_topic_inventory__"],
+      });
+      const previousTopics = [...new Set([
+        ...(runtime.lastDiscoveryTopics ?? []),
+        ...discoveryTopics(knownConfigs),
+      ])];
       const newTopicSet = new Set(newTopics);
       const staleTopics = previousTopics.filter((topic) => !newTopicSet.has(topic));
 

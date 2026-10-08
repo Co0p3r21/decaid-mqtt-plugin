@@ -30,7 +30,7 @@ test("publishes HA discovery entities on connect when enabled", async () => {
   await waitFor(() => env.broker.publishes.some((p) => p.topic.includes("/config")));
 
   const discoveryMessages = env.broker.publishes.filter((p) =>
-    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config")
+    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config") && p.payload.length > 0
   );
 
   assert.equal(discoveryMessages.length, 14);
@@ -57,7 +57,7 @@ test("does not publish HA discovery when disabled", async () => {
   await new Promise((r) => setTimeout(r, 100));
 
   const discoveryMessages = env.broker.publishes.filter((p) =>
-    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config")
+    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config") && p.payload.length > 0
   );
   assert.equal(discoveryMessages.length, 0);
 });
@@ -136,6 +136,8 @@ test("retracts previously retained entities when discovery is disabled", async (
   });
 
   const seedStore = Object.fromEntries(env.plugin.shim.store.entries());
+  // Simulate upgrading from a version that did not persist its discovery topics.
+  delete seedStore[discoveryTopicsKey];
   await env.plugin.unload();
   env.plugin = await loadMqttPlugin({
     sim: { port: env.simPort },
@@ -158,4 +160,36 @@ test("retracts previously retained entities when discovery is disabled", async (
   );
   assert.equal(retractions.length, 14);
   assert.equal([...env.broker.retained.keys()].filter((topic) => topic.startsWith("homeassistant/")).length, 0);
+});
+
+test("retracts a legacy profile select when the first post-upgrade profile list is empty", async () => {
+  const discoveryTopicsKey = "discoveryTopics";
+  await waitFor(() => {
+    const topics = JSON.parse(env.plugin.shim.store.get(discoveryTopicsKey) || "[]");
+    return topics.length === 14;
+  });
+  const profileSelectTopic = [...env.broker.retained.keys()].find((topic) => topic.includes("profile_select/config"));
+  assert.ok(profileSelectTopic);
+
+  const seedStore = Object.fromEntries(env.plugin.shim.store.entries());
+  delete seedStore[discoveryTopicsKey];
+  env.broker.publishes.length = 0;
+  env.sim.state.profiles = [];
+  await env.plugin.unload();
+  env.plugin = await loadMqttPlugin({
+    sim: { port: env.simPort },
+    settings: {
+      Host: "127.0.0.1",
+      Port: env.broker.port,
+      EnableTls: false,
+      PublishIntervalMs: 1000,
+      HaAutoDiscoveryEnable: true,
+    },
+    seedStore,
+  });
+
+  await waitFor(() => env.broker.publishes.some((publish) =>
+    publish.topic === profileSelectTopic && publish.payload.length === 0
+  ));
+  assert.equal(env.broker.retained.has(profileSelectTopic), false);
 });

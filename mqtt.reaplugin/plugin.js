@@ -12904,7 +12904,15 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
           configs = buildDiscoveryConfigs({ config, deviceInfo: machineInfo, profileTitles });
         }
         const newTopics = discoveryTopics(configs);
-        const previousTopics = runtime.lastDiscoveryTopics ?? [];
+        const knownConfigs = buildDiscoveryConfigs({
+          config,
+          deviceInfo: null,
+          profileTitles: ["__discovery_topic_inventory__"]
+        });
+        const previousTopics = [.../* @__PURE__ */ new Set([
+          ...runtime.lastDiscoveryTopics ?? [],
+          ...discoveryTopics(knownConfigs)
+        ])];
         const newTopicSet = new Set(newTopics);
         const staleTopics = previousTopics.filter((topic) => !newTopicSet.has(topic));
         if (staleTopics.length > 0) {
