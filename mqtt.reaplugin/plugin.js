@@ -75,6 +75,7 @@ var __mqttBundle = (() => {
   var MIN_PUBLISH_INTERVAL_MS = 1e3;
   var ACTIVE_SHOT_PUBLISH_INTERVAL_MS = 1e3;
   var UNIQUE_ID_KEY = "uniqueId";
+  var DISCOVERY_TOPICS_KEY = "discoveryTopics";
   function generateUniqueId() {
     const randomValue = Math.floor(Math.random() * 4294967295);
     return randomValue.toString(16).padStart(8, "0");
@@ -12393,32 +12394,38 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       return true;
     }
     function publishDiscovery(configs, onDone) {
-      if (!client) return;
+      if (!client) return false;
       let remaining = configs.length;
       if (remaining === 0) {
-        if (onDone) onDone();
-        return;
+        if (onDone) onDone(null);
+        return true;
       }
+      let firstError = null;
       for (const { topic, payload } of configs) {
-        client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, () => {
+        client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, (error) => {
+          if (error && !firstError) firstError = error;
           remaining -= 1;
-          if (remaining === 0 && onDone) onDone();
+          if (remaining === 0 && onDone) onDone(firstError);
         });
       }
+      return true;
     }
     function retractDiscovery(topics, onDone) {
-      if (!client) return;
+      if (!client) return false;
       let remaining = topics.length;
       if (remaining === 0) {
-        if (onDone) onDone();
-        return;
+        if (onDone) onDone(null);
+        return true;
       }
+      let firstError = null;
       for (const topic of topics) {
-        client.publish(topic, "", { qos: 1, retain: true }, () => {
+        client.publish(topic, "", { qos: 1, retain: true }, (error) => {
+          if (error && !firstError) firstError = error;
           remaining -= 1;
-          if (remaining === 0 && onDone) onDone();
+          if (remaining === 0 && onDone) onDone(firstError);
         });
       }
+      return true;
     }
     return {
       start,
@@ -12726,6 +12733,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
     let waterStream = null;
     let publishTimer = null;
     let dispatcher = null;
+    let discoveryQueue = Promise.resolve();
     const runtime = {
       snapshot: null,
       scaleConnected: false,
@@ -12877,25 +12885,46 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       if (espressoCount !== null) runtime.espressoCount = espressoCount;
       if (steamingCount !== null) runtime.steamingCount = steamingCount;
     }
-    async function publishDiscovery() {
-      if (!config.haAutoDiscoveryEnable || !bridge) return;
+    function publishDiscoveryBatch(publish2, entries) {
+      return new Promise((resolve, reject) => {
+        const started = publish2(entries, (error) => error ? reject(error) : resolve());
+        if (!started) reject(new Error("MQTT client is not connected"));
+      });
+    }
+    async function syncDiscovery() {
+      if (!bridge) return;
       try {
-        const [machineInfo, profiles] = await Promise.all([
-          api.fetchMachineInfo(),
-          api.fetchProfiles()
-        ]);
-        const profileTitles = Array.isArray(profiles) ? profiles.map((p) => p.profile?.title).filter(Boolean) : [];
-        const configs = buildDiscoveryConfigs({
-          config,
-          deviceInfo: machineInfo,
-          profileTitles
-        });
-        runtime.lastDiscoveryTopics = discoveryTopics(configs);
-        bridge.publishDiscovery(configs);
-        log(`published ${configs.length} HA discovery entities`);
+        let configs = [];
+        if (config.haAutoDiscoveryEnable) {
+          const [machineInfo, profiles] = await Promise.all([
+            api.fetchMachineInfo(),
+            api.fetchProfiles()
+          ]);
+          const profileTitles = Array.isArray(profiles) ? profiles.map((p) => p.profile?.title).filter(Boolean) : [];
+          configs = buildDiscoveryConfigs({ config, deviceInfo: machineInfo, profileTitles });
+        }
+        const newTopics = discoveryTopics(configs);
+        const previousTopics = runtime.lastDiscoveryTopics ?? [];
+        const newTopicSet = new Set(newTopics);
+        const staleTopics = previousTopics.filter((topic) => !newTopicSet.has(topic));
+        if (staleTopics.length > 0) {
+          await publishDiscoveryBatch((topics, done) => bridge.retractDiscovery(topics, done), staleTopics);
+          log(`retracted ${staleTopics.length} stale HA discovery entities`);
+        }
+        if (configs.length > 0) {
+          await publishDiscoveryBatch((items, done) => bridge.publishDiscovery(items, done), configs);
+        }
+        runtime.lastDiscoveryTopics = newTopics.length > 0 ? newTopics : null;
+        storage.write(DISCOVERY_TOPICS_KEY, JSON.stringify(newTopics));
+        if (configs.length > 0) log(`published ${configs.length} HA discovery entities`);
       } catch (e) {
-        log(`HA discovery publish failed: ${e?.message ?? e}`);
+        log(`HA discovery sync failed; will retry on next connection: ${e?.message ?? e}`);
       }
+    }
+    function publishDiscovery() {
+      const operation = discoveryQueue.then(syncDiscovery, syncDiscovery);
+      discoveryQueue = operation;
+      return operation;
     }
     function buildAndStartServices() {
       dispatcher = new CommandDispatcher({
@@ -12966,6 +12995,14 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       id: PLUGIN_ID,
       async onLoad(settings) {
         const storedUniqueId = await storage.read(UNIQUE_ID_KEY);
+        const storedTopicsJson = await storage.read(DISCOVERY_TOPICS_KEY);
+        if (storedTopicsJson) {
+          try {
+            const storedTopics = JSON.parse(storedTopicsJson);
+            runtime.lastDiscoveryTopics = Array.isArray(storedTopics) ? storedTopics.filter((topic) => typeof topic === "string") : null;
+          } catch {
+          }
+        }
         const { config: normalized, uniqueId: uniqueId2, warnings } = normalizeConfig(settings, storedUniqueId);
         if (!storedUniqueId) {
           storage.write(UNIQUE_ID_KEY, uniqueId2);
