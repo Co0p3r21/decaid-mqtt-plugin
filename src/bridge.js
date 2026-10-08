@@ -128,27 +128,33 @@ export function createMqttBridge({ host, config, onCommand, log }) {
   }
 
   function publishDiscovery(configs, onDone) {
-    if (!client) return;
+    if (!client) return false;
     let remaining = configs.length;
-    if (remaining === 0) { if (onDone) onDone(); return; }
+    if (remaining === 0) { if (onDone) onDone(null); return true; }
+    let firstError = null;
     for (const { topic, payload } of configs) {
-      client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, () => {
+      client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, (error) => {
+        if (error && !firstError) firstError = error;
         remaining -= 1;
-        if (remaining === 0 && onDone) onDone();
+        if (remaining === 0 && onDone) onDone(firstError);
       });
     }
+    return true;
   }
 
   function retractDiscovery(topics, onDone) {
-    if (!client) return;
+    if (!client) return false;
     let remaining = topics.length;
-    if (remaining === 0) { if (onDone) onDone(); return; }
+    if (remaining === 0) { if (onDone) onDone(null); return true; }
+    let firstError = null;
     for (const topic of topics) {
-      client.publish(topic, "", { qos: 1, retain: true }, () => {
+      client.publish(topic, "", { qos: 1, retain: true }, (error) => {
+        if (error && !firstError) firstError = error;
         remaining -= 1;
-        if (remaining === 0 && onDone) onDone();
+        if (remaining === 0 && onDone) onDone(firstError);
       });
     }
+    return true;
   }
 
   return {

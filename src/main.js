@@ -2,6 +2,7 @@ import {
   normalizeConfig,
   generateUniqueId,
   UNIQUE_ID_KEY,
+  DISCOVERY_TOPICS_KEY,
   ACTIVE_SHOT_PUBLISH_INTERVAL_MS,
 } from "./config.js";
 import { buildStateMessage } from "./state-doc.js";
@@ -32,6 +33,7 @@ export function createPlugin(host) {
   let waterStream = null;
   let publishTimer = null;
   let dispatcher = null;
+  let discoveryQueue = Promise.resolve();
 
 
   const runtime = {
@@ -221,27 +223,53 @@ export function createPlugin(host) {
     if (steamingCount !== null) runtime.steamingCount = steamingCount;
   }
 
-  async function publishDiscovery() {
-    if (!config.haAutoDiscoveryEnable || !bridge) return;
+  function publishDiscoveryBatch(publish, entries) {
+    return new Promise((resolve, reject) => {
+      const started = publish(entries, (error) => error ? reject(error) : resolve());
+      if (!started) reject(new Error("MQTT client is not connected"));
+    });
+  }
+
+  async function syncDiscovery() {
+    if (!bridge) return;
     try {
-      const [machineInfo, profiles] = await Promise.all([
-        api.fetchMachineInfo(),
-        api.fetchProfiles(),
-      ]);
-      const profileTitles = Array.isArray(profiles)
-        ? profiles.map((p) => p.profile?.title).filter(Boolean)
-        : [];
-      const configs = buildDiscoveryConfigs({
-        config,
-        deviceInfo: machineInfo,
-        profileTitles,
-      });
-      runtime.lastDiscoveryTopics = discoveryTopics(configs);
-      bridge.publishDiscovery(configs);
-      log(`published ${configs.length} HA discovery entities`);
+      let configs = [];
+      if (config.haAutoDiscoveryEnable) {
+        const [machineInfo, profiles] = await Promise.all([
+          api.fetchMachineInfo(),
+          api.fetchProfiles(),
+        ]);
+        const profileTitles = Array.isArray(profiles)
+          ? profiles.map((p) => p.profile?.title).filter(Boolean)
+          : [];
+        configs = buildDiscoveryConfigs({ config, deviceInfo: machineInfo, profileTitles });
+      }
+
+      const newTopics = discoveryTopics(configs);
+      const previousTopics = runtime.lastDiscoveryTopics ?? [];
+      const newTopicSet = new Set(newTopics);
+      const staleTopics = previousTopics.filter((topic) => !newTopicSet.has(topic));
+
+      if (staleTopics.length > 0) {
+        await publishDiscoveryBatch((topics, done) => bridge.retractDiscovery(topics, done), staleTopics);
+        log(`retracted ${staleTopics.length} stale HA discovery entities`);
+      }
+      if (configs.length > 0) {
+        await publishDiscoveryBatch((items, done) => bridge.publishDiscovery(items, done), configs);
+      }
+
+      runtime.lastDiscoveryTopics = newTopics.length > 0 ? newTopics : null;
+      storage.write(DISCOVERY_TOPICS_KEY, JSON.stringify(newTopics));
+      if (configs.length > 0) log(`published ${configs.length} HA discovery entities`);
     } catch (e) {
-      log(`HA discovery publish failed: ${e?.message ?? e}`);
+      log(`HA discovery sync failed; will retry on next connection: ${e?.message ?? e}`);
     }
+  }
+
+  function publishDiscovery() {
+    const operation = discoveryQueue.then(syncDiscovery, syncDiscovery);
+    discoveryQueue = operation;
+    return operation;
   }
 
   function buildAndStartServices() {
@@ -318,6 +346,17 @@ export function createPlugin(host) {
 
     async onLoad(settings) {
       const storedUniqueId = await storage.read(UNIQUE_ID_KEY);
+      const storedTopicsJson = await storage.read(DISCOVERY_TOPICS_KEY);
+      if (storedTopicsJson) {
+        try {
+          const storedTopics = JSON.parse(storedTopicsJson);
+          runtime.lastDiscoveryTopics = Array.isArray(storedTopics)
+            ? storedTopics.filter((topic) => typeof topic === "string")
+            : null;
+        } catch {
+          // ignore invalid json
+        }
+      }
       const { config: normalized, uniqueId, warnings } = normalizeConfig(settings, storedUniqueId);
       if (!storedUniqueId) {
         storage.write(UNIQUE_ID_KEY, uniqueId);

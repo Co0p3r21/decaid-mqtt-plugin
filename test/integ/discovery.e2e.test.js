@@ -2,6 +2,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import mqtt from "mqtt";
 import { startE2E } from "./helpers/fixture.js";
+import { loadMqttPlugin } from "./helpers/plugin-runner.js";
 import { waitFor } from "./helpers/broker.js";
 
 let env;
@@ -10,7 +11,10 @@ beforeEach(async () => {
   env = await startE2E({
     settings: {
       HaAutoDiscoveryEnable: true,
-    }
+    },
+    simSetup: (sim) => {
+      sim.state.profiles = [{ profile: { title: "Profile A" } }];
+    },
   });
 });
 
@@ -21,7 +25,7 @@ afterEach(async () => {
 test("publishes HA discovery entities on connect when enabled", async () => {
   env.sim.state.machineInfo = { model: "DE1XXL", firmwareVersion: "1234" };
   env.sim.state.profiles = [{ profile: { title: "Test Profile" } }];
-  
+
   await waitFor(() => env.broker.subscriptions.length > 0);
   await waitFor(() => env.broker.publishes.some((p) => p.topic.includes("/config")));
 
@@ -48,7 +52,7 @@ test("does not publish HA discovery when disabled", async () => {
       HaAutoDiscoveryEnable: false,
     }
   });
-  
+
   await waitFor(() => env.broker.subscriptions.length > 0);
   await new Promise((r) => setTimeout(r, 100));
 
@@ -95,4 +99,63 @@ test("re-publishes discovery configs when a profile command is received", async 
   assert.ok(selectEntity);
   const payload = JSON.parse(selectEntity.payload.toString());
   assert.deepEqual(payload.options, ["Profile B", "Profile C"]);
+});
+
+test("retracts discovery topics when profile list becomes empty", async () => {
+  env.sim.state.profiles = [{ profile: { title: "Profile A" } }];
+  await waitFor(() => env.broker.subscriptions.length > 0);
+  await waitFor(() => env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config")
+  ).length === 14);
+
+  env.broker.publishes.length = 0;
+  env.sim.state.profiles = [];
+
+  // Force a reconnect to trigger publishDiscovery.
+  const clientId = env.broker.connections[0].id;
+  assert.equal(env.broker.crashClient(clientId), true);
+  await waitFor(() => env.broker.connections.length >= 2, 10000);
+
+  await waitFor(() => env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.payload.length === 0
+  ).length === 1, 10000);
+  const retractions = env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.payload.length === 0
+  );
+  assert.equal(retractions.length, 1);
+  assert.ok(retractions[0].topic.includes("profile_select/config"));
+  assert.equal(env.broker.retained.has(retractions[0].topic), false);
+});
+
+test("retracts previously retained entities when discovery is disabled", async () => {
+  env.sim.state.profiles = [{ profile: { title: "Test Profile" } }];
+  const discoveryTopicsKey = "discoveryTopics";
+  await waitFor(() => {
+    const topics = JSON.parse(env.plugin.shim.store.get(discoveryTopicsKey) || "[]");
+    return topics.length === 14;
+  });
+
+  const seedStore = Object.fromEntries(env.plugin.shim.store.entries());
+  await env.plugin.unload();
+  env.plugin = await loadMqttPlugin({
+    sim: { port: env.simPort },
+    settings: {
+      Host: "127.0.0.1",
+      Port: env.broker.port,
+      EnableTls: false,
+      PublishIntervalMs: 1000,
+      HaAutoDiscoveryEnable: false,
+    },
+    seedStore
+  });
+
+  await waitFor(() => env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.payload.length === 0
+  ).length === 14);
+
+  const retractions = env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.payload.length === 0
+  );
+  assert.equal(retractions.length, 14);
+  assert.equal([...env.broker.retained.keys()].filter((topic) => topic.startsWith("homeassistant/")).length, 0);
 });
