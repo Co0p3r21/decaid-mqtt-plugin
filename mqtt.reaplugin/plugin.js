@@ -81,7 +81,7 @@ var __mqttBundle = (() => {
   }
   function normalizeConfig(raw, storedUniqueId) {
     const warnings = [];
-    const uniqueId = storedUniqueId || generateUniqueId();
+    const uniqueId2 = storedUniqueId || generateUniqueId();
     const host = typeof raw.Host === "string" ? raw.Host.trim() : "";
     let port = raw.Port;
     if (port === void 0 || port === null || port === "") port = DEFAULT_PORT;
@@ -100,11 +100,11 @@ var __mqttBundle = (() => {
       publishIntervalMs = DEFAULT_PUBLISH_INTERVAL_MS;
     }
     const enableTls = raw.EnableTls === void 0 || raw.EnableTls === null ? true : Boolean(raw.EnableTls);
-    const clientId = typeof raw.ClientId === "string" && raw.ClientId.trim() !== "" ? raw.ClientId.trim() : `de1plus_${uniqueId}`;
-    const topicPrefix = typeof raw.TopicPrefix === "string" && raw.TopicPrefix.trim() !== "" ? raw.TopicPrefix.trim() : `de1plus/${uniqueId}`;
+    const clientId = typeof raw.ClientId === "string" && raw.ClientId.trim() !== "" ? raw.ClientId.trim() : `de1plus_${uniqueId2}`;
+    const topicPrefix = typeof raw.TopicPrefix === "string" && raw.TopicPrefix.trim() !== "" ? raw.TopicPrefix.trim() : `de1plus/${uniqueId2}`;
     return {
       warnings,
-      uniqueId,
+      uniqueId: uniqueId2,
       config: {
         enabled: host !== "",
         host,
@@ -115,7 +115,8 @@ var __mqttBundle = (() => {
         topicPrefix,
         publishIntervalMs,
         enableTls,
-        uniqueId
+        uniqueId: uniqueId2,
+        haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable)
       }
     };
   }
@@ -385,7 +386,10 @@ var __mqttBundle = (() => {
       if (!payload) return null;
       return readCountFromResponse(payload, countKind);
     }
-    return { fetchShotRecord, fetchWorkflow, fetchProfiles, fetchCollectionCount };
+    async function fetchMachineInfo() {
+      return getJson("/api/v1/machine/info", { quiet: true });
+    }
+    return { fetchShotRecord, fetchWorkflow, fetchProfiles, fetchCollectionCount, fetchMachineInfo };
   }
 
   // src/dispatcher.js
@@ -12388,11 +12392,41 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       client.publish(stateTopic, JSON.stringify(stateMessage), { qos: 1, retain: true }, onPublished);
       return true;
     }
+    function publishDiscovery(configs, onDone) {
+      if (!client) return;
+      let remaining = configs.length;
+      if (remaining === 0) {
+        if (onDone) onDone();
+        return;
+      }
+      for (const { topic, payload } of configs) {
+        client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, () => {
+          remaining -= 1;
+          if (remaining === 0 && onDone) onDone();
+        });
+      }
+    }
+    function retractDiscovery(topics, onDone) {
+      if (!client) return;
+      let remaining = topics.length;
+      if (remaining === 0) {
+        if (onDone) onDone();
+        return;
+      }
+      for (const topic of topics) {
+        client.publish(topic, "", { qos: 1, retain: true }, () => {
+          remaining -= 1;
+          if (remaining === 0 && onDone) onDone();
+        });
+      }
+    }
     return {
       start,
       stop,
       reset,
       publishState,
+      publishDiscovery,
+      retractDiscovery,
       get connected() {
         return Boolean(client);
       },
@@ -12534,6 +12568,147 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
     return { read, write, resolvePendingRead };
   }
 
+  // src/discovery.js
+  var DISCOVERY_PREFIX = "homeassistant";
+  var ENTITY_NAME_PREFIX = "DE1+ ";
+  var DEFAULT_DEVICE_NAME = "Decent Espresso";
+  var DEFAULT_MODEL = "DE1";
+  function deviceBlock(config, deviceInfo) {
+    const model = deviceInfo?.model || DEFAULT_MODEL;
+    const name2 = `${DEFAULT_DEVICE_NAME} ${model}`;
+    const device = {
+      identifiers: [config.uniqueId],
+      name: name2,
+      manufacturer: "Decent Espresso",
+      model
+    };
+    if (deviceInfo?.firmwareVersion) {
+      device.sw_version = String(deviceInfo.firmwareVersion);
+    }
+    if (deviceInfo?.mac) {
+      device.connections = [["mac", deviceInfo.mac]];
+    }
+    return device;
+  }
+  function availability(stateTopic) {
+    return {
+      availability_topic: stateTopic,
+      availability_template: "{{ value_json.de1_connected }}",
+      payload_available: "True",
+      payload_not_available: "False"
+    };
+  }
+  function uniqueId(config, entityName) {
+    return `de1plus_${config.uniqueId}_${entityName}`;
+  }
+  function sensorConfig(config, device, stateTopic, { entityName, displayName, field, deviceClass, stateClass, unit, icon }) {
+    const cfg = {
+      name: `${ENTITY_NAME_PREFIX}${displayName}`,
+      unique_id: uniqueId(config, entityName),
+      state_topic: stateTopic,
+      value_template: `{{ value_json.${field} | default(None) }}`,
+      device,
+      ...availability(stateTopic)
+    };
+    if (deviceClass) cfg.device_class = deviceClass;
+    if (stateClass) cfg.state_class = stateClass;
+    if (unit) cfg.unit_of_measurement = unit;
+    if (icon) cfg.icon = icon;
+    return cfg;
+  }
+  var SENSORS = [
+    { entityName: "state", displayName: "State", field: "state", icon: "mdi:state-machine" },
+    { entityName: "substate", displayName: "Substate", field: "substate", icon: "mdi:state-machine" },
+    { entityName: "water_level", displayName: "Water Level", field: "water_level_ml", deviceClass: "volume_storage", stateClass: "measurement", unit: "mL", icon: "mdi:water" },
+    { entityName: "head_temp", displayName: "Head Temperature", field: "head_temperature", deviceClass: "temperature", stateClass: "measurement", unit: "\xB0C" },
+    { entityName: "mix_temp", displayName: "Mix Temperature", field: "mix_temperature", deviceClass: "temperature", stateClass: "measurement", unit: "\xB0C" },
+    { entityName: "steam_temp", displayName: "Steam Temperature", field: "steam_heater_temperature", deviceClass: "temperature", stateClass: "measurement", unit: "\xB0C" },
+    { entityName: "espresso_count", displayName: "Espresso Count", field: "espresso_count", stateClass: "total_increasing", icon: "mdi:coffee" },
+    { entityName: "steaming_count", displayName: "Steaming Count", field: "steaming_count", stateClass: "total_increasing", icon: "mdi:sprinkler" },
+    { entityName: "steam_mode", displayName: "Steam Heater Mode", field: "steam_mode", icon: "mdi:heat-wave" },
+    { entityName: "shot_weight", displayName: "Shot Weight", field: "shot_weight_g", deviceClass: "weight", stateClass: "measurement", unit: "g" }
+  ];
+  function buildDiscoveryConfigs({ config, deviceInfo, profileTitles }) {
+    const stateTopic = `${config.topicPrefix}/state`;
+    const commandTopic = `${config.topicPrefix}/command`;
+    const device = deviceBlock(config, deviceInfo);
+    const configs = [];
+    for (const def of SENSORS) {
+      configs.push({
+        topic: `${DISCOVERY_PREFIX}/sensor/${uniqueId(config, def.entityName)}/config`,
+        payload: sensorConfig(config, device, stateTopic, def)
+      });
+    }
+    configs.push({
+      topic: `${DISCOVERY_PREFIX}/binary_sensor/${uniqueId(config, "shot_active")}/config`,
+      payload: {
+        name: `${ENTITY_NAME_PREFIX}Shot Active`,
+        unique_id: uniqueId(config, "shot_active"),
+        state_topic: stateTopic,
+        value_template: "{{ value_json.shot_active | default(False) }}",
+        payload_on: "True",
+        payload_off: "False",
+        device,
+        ...availability(stateTopic)
+      }
+    });
+    configs.push({
+      topic: `${DISCOVERY_PREFIX}/switch/${uniqueId(config, "switch")}/config`,
+      payload: {
+        name: `${ENTITY_NAME_PREFIX}On`,
+        unique_id: uniqueId(config, "switch"),
+        state_topic: stateTopic,
+        command_topic: commandTopic,
+        value_template: "{{ value_json.wake_state }}",
+        payload_on: "wake",
+        payload_off: "sleep",
+        state_on: "True",
+        state_off: "False",
+        icon: "mdi:coffee-maker",
+        device,
+        ...availability(stateTopic)
+      }
+    });
+    configs.push({
+      topic: `${DISCOVERY_PREFIX}/switch/${uniqueId(config, "steam_switch")}/config`,
+      payload: {
+        name: `${ENTITY_NAME_PREFIX}Steam Heater On`,
+        unique_id: uniqueId(config, "steam_switch"),
+        state_topic: stateTopic,
+        command_topic: commandTopic,
+        value_template: "{{ value_json.steam_state }}",
+        payload_on: "steam_on",
+        payload_off: "steam_off",
+        state_on: "True",
+        state_off: "False",
+        icon: "mdi:heat-wave",
+        device,
+        ...availability(stateTopic)
+      }
+    });
+    if (Array.isArray(profileTitles) && profileTitles.length > 0) {
+      configs.push({
+        topic: `${DISCOVERY_PREFIX}/select/${uniqueId(config, "profile_select")}/config`,
+        payload: {
+          name: `${ENTITY_NAME_PREFIX}Profile`,
+          unique_id: uniqueId(config, "profile_select"),
+          state_topic: stateTopic,
+          command_topic: commandTopic,
+          value_template: "{{ value_json.profile }}",
+          command_template: "profile {{ value }}",
+          options: profileTitles,
+          icon: "mdi:chart-bell-curve",
+          device,
+          ...availability(stateTopic)
+        }
+      });
+    }
+    return configs;
+  }
+  function discoveryTopics(configs) {
+    return configs.map((c) => c.topic);
+  }
+
   // src/main.js
   var PLUGIN_ID = "mqtt.reaplugin";
   function createPlugin(host) {
@@ -12565,7 +12740,8 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       shot: null,
       lastPublishedStateJson: null,
       lastState: null,
-      lastSubstate: null
+      lastSubstate: null,
+      lastDiscoveryTopics: null
     };
     function lastPublishedMachineState() {
       if (!runtime.lastPublishedStateJson) return void 0;
@@ -12701,19 +12877,41 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       if (espressoCount !== null) runtime.espressoCount = espressoCount;
       if (steamingCount !== null) runtime.steamingCount = steamingCount;
     }
+    async function publishDiscovery() {
+      if (!config.haAutoDiscoveryEnable || !bridge) return;
+      try {
+        const [machineInfo, profiles] = await Promise.all([
+          api.fetchMachineInfo(),
+          api.fetchProfiles()
+        ]);
+        const profileTitles = Array.isArray(profiles) ? profiles.map((p) => p.profile?.title).filter(Boolean) : [];
+        const configs = buildDiscoveryConfigs({
+          config,
+          deviceInfo: machineInfo,
+          profileTitles
+        });
+        runtime.lastDiscoveryTopics = discoveryTopics(configs);
+        bridge.publishDiscovery(configs);
+        log(`published ${configs.length} HA discovery entities`);
+      } catch (e) {
+        log(`HA discovery publish failed: ${e?.message ?? e}`);
+      }
+    }
     function buildAndStartServices() {
       dispatcher = new CommandDispatcher({
         fetchImpl: fetch,
         currentStateProvider: lastPublishedMachineState
       });
+      const onProfileCommand = config.haAutoDiscoveryEnable ? () => publishDiscovery() : null;
       bridge = createMqttBridge({
         host,
         config,
-        onCommand: createCommandHandler(dispatcher, log),
+        onCommand: createCommandHandler(dispatcher, log, onProfileCommand),
         log
       });
       bridge.onConnectedHandler = () => {
         publish({ refreshCountsFirst: true });
+        publishDiscovery();
       };
       bridge.start();
       scaleStream = createLoopbackJsonStream({
@@ -12768,9 +12966,9 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       id: PLUGIN_ID,
       async onLoad(settings) {
         const storedUniqueId = await storage.read(UNIQUE_ID_KEY);
-        const { config: normalized, uniqueId, warnings } = normalizeConfig(settings, storedUniqueId);
+        const { config: normalized, uniqueId: uniqueId2, warnings } = normalizeConfig(settings, storedUniqueId);
         if (!storedUniqueId) {
-          storage.write(UNIQUE_ID_KEY, uniqueId);
+          storage.write(UNIQUE_ID_KEY, uniqueId2);
         }
         for (const warning of warnings) {
           log(`config warning: ${warning}`);

@@ -127,11 +127,37 @@ export function createMqttBridge({ host, config, onCommand, log }) {
     return true;
   }
 
+  function publishDiscovery(configs, onDone) {
+    if (!client) return;
+    let remaining = configs.length;
+    if (remaining === 0) { if (onDone) onDone(); return; }
+    for (const { topic, payload } of configs) {
+      client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, () => {
+        remaining -= 1;
+        if (remaining === 0 && onDone) onDone();
+      });
+    }
+  }
+
+  function retractDiscovery(topics, onDone) {
+    if (!client) return;
+    let remaining = topics.length;
+    if (remaining === 0) { if (onDone) onDone(); return; }
+    for (const topic of topics) {
+      client.publish(topic, "", { qos: 1, retain: true }, () => {
+        remaining -= 1;
+        if (remaining === 0 && onDone) onDone();
+      });
+    }
+  }
+
   return {
     start,
     stop,
     reset,
     publishState,
+    publishDiscovery,
+    retractDiscovery,
     get connected() {
       return Boolean(client);
     },
