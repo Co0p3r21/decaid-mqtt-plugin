@@ -13,6 +13,7 @@ import { createMqttBridge } from "./bridge.js";
 import { createLoopbackJsonStream } from "./loopback.js";
 import { createStorageAdapter } from "./storage.js";
 import { createDecaidApi } from "./decaid-api.js";
+import { buildDiscoveryConfigs, discoveryTopics } from "./discovery.js";
 
 export const PLUGIN_ID = "mqtt.reaplugin";
 
@@ -48,6 +49,7 @@ export function createPlugin(host) {
     lastPublishedStateJson: null,
     lastState: null,
     lastSubstate: null,
+    lastDiscoveryTopics: null,
   };
 
   function lastPublishedMachineState() {
@@ -219,19 +221,44 @@ export function createPlugin(host) {
     if (steamingCount !== null) runtime.steamingCount = steamingCount;
   }
 
+  async function publishDiscovery() {
+    if (!config.haAutoDiscoveryEnable || !bridge) return;
+    try {
+      const [machineInfo, profiles] = await Promise.all([
+        api.fetchMachineInfo(),
+        api.fetchProfiles(),
+      ]);
+      const profileTitles = Array.isArray(profiles)
+        ? profiles.map((p) => p.profile?.title).filter(Boolean)
+        : [];
+      const configs = buildDiscoveryConfigs({
+        config,
+        deviceInfo: machineInfo,
+        profileTitles,
+      });
+      runtime.lastDiscoveryTopics = discoveryTopics(configs);
+      bridge.publishDiscovery(configs);
+      log(`published ${configs.length} HA discovery entities`);
+    } catch (e) {
+      log(`HA discovery publish failed: ${e?.message ?? e}`);
+    }
+  }
+
   function buildAndStartServices() {
     dispatcher = new CommandDispatcher({
       fetchImpl: fetch,
       currentStateProvider: lastPublishedMachineState,
     });
+    const onProfileCommand = config.haAutoDiscoveryEnable ? () => publishDiscovery() : null;
     bridge = createMqttBridge({
       host,
       config,
-      onCommand: createCommandHandler(dispatcher, log),
+      onCommand: createCommandHandler(dispatcher, log, onProfileCommand),
       log,
     });
     bridge.onConnectedHandler = () => {
       publish({ refreshCountsFirst: true });
+      publishDiscovery();
     };
     bridge.start();
 

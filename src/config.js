@@ -58,6 +58,7 @@ export function normalizeConfig(raw, storedUniqueId) {
       publishIntervalMs,
       enableTls,
       uniqueId,
+      haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable),
     },
   };
 }
