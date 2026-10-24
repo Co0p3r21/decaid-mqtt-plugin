@@ -76,6 +76,13 @@ var __mqttBundle = (() => {
   var ACTIVE_SHOT_PUBLISH_INTERVAL_MS = 1e3;
   var UNIQUE_ID_KEY = "uniqueId";
   var DISCOVERY_TOPICS_KEY = "discoveryTopics";
+  var DEFAULT_BUTTON_LABEL = "\u{1F518}";
+  var MAX_BUTTON_LABEL_LENGTH = 24;
+  function normalizeButtonLabel(raw) {
+    if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_BUTTON_LABEL;
+    const trimmed = raw.trim();
+    return trimmed.length > MAX_BUTTON_LABEL_LENGTH ? trimmed.slice(0, MAX_BUTTON_LABEL_LENGTH) : trimmed;
+  }
   function generateUniqueId() {
     const randomValue = Math.floor(Math.random() * 4294967295);
     return randomValue.toString(16).padStart(8, "0");
@@ -117,7 +124,9 @@ var __mqttBundle = (() => {
         publishIntervalMs,
         enableTls,
         uniqueId: uniqueId2,
-        haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable)
+        haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable),
+        showButton: Boolean(raw.ShowButton),
+        buttonLabel: normalizeButtonLabel(raw.ButtonLabel)
       }
     };
   }
@@ -12283,6 +12292,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
   function createMqttBridge({ host, config, onCommand, log }) {
     const stateTopic = `${config.topicPrefix}/state`;
     const commandTopic = `${config.topicPrefix}/command`;
+    const eventTopic = `${config.topicPrefix}/event`;
     let client = null;
     let reconnectTimer = null;
     let disposed = false;
@@ -12393,6 +12403,11 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       client.publish(stateTopic, JSON.stringify(stateMessage), { qos: 1, retain: true }, onPublished);
       return true;
     }
+    function publishEvent(onPublished) {
+      if (!client) return false;
+      client.publish(eventTopic, "{}", { qos: 1, retain: false }, onPublished);
+      return true;
+    }
     function publishDiscovery(configs, onDone) {
       if (!client) return false;
       let remaining = configs.length;
@@ -12432,6 +12447,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       stop,
       reset,
       publishState,
+      publishEvent,
       publishDiscovery,
       retractDiscovery,
       get connected() {
@@ -12440,7 +12456,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
       get reconnectAttempts() {
         return attempts;
       },
-      topics: { stateTopic, commandTopic },
+      topics: { stateTopic, commandTopic, eventTopic },
       set onConnectedHandler(fn) {
         onConnected = fn;
       }
@@ -13046,6 +13062,52 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
           default:
             break;
         }
+      },
+      async __httpRequestHandler(request) {
+        const json = (status, body) => ({
+          requestId: request.requestId,
+          status,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (request.endpoint === "skin") {
+          const surfaces = [];
+          if (config?.showButton) {
+            surfaces.push({
+              id: "mqtt-header-btn",
+              kind: "header-button",
+              label: config.buttonLabel || "\u{1F518}",
+              text: "Home Assistant Trigger",
+              action: {
+                type: "call",
+                endpoint: "trigger",
+                field: "action",
+                value: 1
+              }
+            });
+          }
+          return json(200, { version: 1, surfaces });
+        }
+        if (request.endpoint === "trigger") {
+          if (!bridge) {
+            return json(503, { error: "MQTT not connected" });
+          }
+          return new Promise((resolve) => {
+            const started = bridge.publishEvent((error) => {
+              if (error) {
+                log(`event publish failed: ${error?.message ?? error}`);
+                resolve(json(502, { error: "publish failed" }));
+              } else {
+                log("button event published");
+                resolve(json(200, { ok: true }));
+              }
+            });
+            if (!started) {
+              resolve(json(503, { error: "MQTT not connected" }));
+            }
+          });
+        }
+        return json(404, { error: "not found" });
       }
     };
   }

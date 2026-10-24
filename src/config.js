@@ -4,6 +4,16 @@ export const MIN_PUBLISH_INTERVAL_MS = 1000;
 export const ACTIVE_SHOT_PUBLISH_INTERVAL_MS = 1000;
 export const UNIQUE_ID_KEY = "uniqueId";
 export const DISCOVERY_TOPICS_KEY = "discoveryTopics";
+export const DEFAULT_BUTTON_LABEL = "🔘";
+export const MAX_BUTTON_LABEL_LENGTH = 24;
+
+function normalizeButtonLabel(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_BUTTON_LABEL;
+  const trimmed = raw.trim();
+  return trimmed.length > MAX_BUTTON_LABEL_LENGTH
+    ? trimmed.slice(0, MAX_BUTTON_LABEL_LENGTH)
+    : trimmed;
+}
 
 export function generateUniqueId() {
   const randomValue = Math.floor(Math.random() * 0xffffffff);
@@ -60,6 +70,8 @@ export function normalizeConfig(raw, storedUniqueId) {
       enableTls,
       uniqueId,
       haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable),
+      showButton: Boolean(raw.ShowButton),
+      buttonLabel: normalizeButtonLabel(raw.ButtonLabel),
     },
   };
 }

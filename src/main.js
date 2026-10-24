@@ -407,5 +407,55 @@ export function createPlugin(host) {
           break;
       }
     },
+
+    async __httpRequestHandler(request) {
+      const json = (status, body) => ({
+        requestId: request.requestId,
+        status,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (request.endpoint === "skin") {
+        const surfaces = [];
+        if (config?.showButton) {
+          surfaces.push({
+            id: "mqtt-header-btn",
+            kind: "header-button",
+            label: config.buttonLabel || "🔘",
+            text: "Home Assistant Trigger",
+            action: {
+              type: "call",
+              endpoint: "trigger",
+              field: "action",
+              value: 1,
+            },
+          });
+        }
+        return json(200, { version: 1, surfaces });
+      }
+
+      if (request.endpoint === "trigger") {
+        if (!bridge) {
+          return json(503, { error: "MQTT not connected" });
+        }
+        return new Promise((resolve) => {
+          const started = bridge.publishEvent((error) => {
+            if (error) {
+              log(`event publish failed: ${error?.message ?? error}`);
+              resolve(json(502, { error: "publish failed" }));
+            } else {
+              log("button event published");
+              resolve(json(200, { ok: true }));
+            }
+          });
+          if (!started) {
+            resolve(json(503, { error: "MQTT not connected" }));
+          }
+        });
+      }
+
+      return json(404, { error: "not found" });
+    },
   };
 }

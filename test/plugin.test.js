@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeConfig, generateUniqueId, UNIQUE_ID_KEY } from "../src/config.js";
+import { normalizeConfig, generateUniqueId, UNIQUE_ID_KEY, DEFAULT_BUTTON_LABEL, MAX_BUTTON_LABEL_LENGTH } from "../src/config.js";
 import { STATE_MAP, SUBSTATE_MAP, mapState, mapSubstate, deriveWakeState, deriveSteamFields, isShotActive } from "../src/mapping.js";
 import { buildStateMessage, offlineStateMessage, waterTankLevelToMilliliters } from "../src/state-doc.js";
 import { parseCommand } from "../src/commands.js";
@@ -422,4 +422,28 @@ test("decaid api logs exceptions on non-quiet endpoints", async () => {
   });
   assert.equal(await api.fetchShotRecord("x"), null);
   assert.match(logs[0], /GET \/api\/v1\/shots\/x failed: boom/);
+});
+
+test("normalizeConfig defaults showButton to false and buttonLabel to emoji", () => {
+  const { config } = normalizeConfig({ Host: "h" }, null);
+  assert.equal(config.showButton, false);
+  assert.equal(config.buttonLabel, DEFAULT_BUTTON_LABEL);
+});
+
+test("normalizeConfig reads ShowButton and custom ButtonLabel", () => {
+  const { config } = normalizeConfig({ Host: "h", ShowButton: true, ButtonLabel: "HA" }, null);
+  assert.equal(config.showButton, true);
+  assert.equal(config.buttonLabel, "HA");
+});
+
+test("normalizeConfig truncates ButtonLabel to 24 characters", () => {
+  const long = "A".repeat(30);
+  const { config } = normalizeConfig({ Host: "h", ButtonLabel: long }, null);
+  assert.equal(config.buttonLabel.length, MAX_BUTTON_LABEL_LENGTH);
+  assert.equal(config.buttonLabel, "A".repeat(MAX_BUTTON_LABEL_LENGTH));
+});
+
+test("normalizeConfig defaults empty ButtonLabel to emoji", () => {
+  const { config } = normalizeConfig({ Host: "h", ButtonLabel: "   " }, null);
+  assert.equal(config.buttonLabel, DEFAULT_BUTTON_LABEL);
 });
