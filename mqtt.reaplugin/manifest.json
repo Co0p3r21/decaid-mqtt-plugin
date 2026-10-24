@@ -1,9 +1,9 @@
 {
   "id": "mqtt.reaplugin",
-  "author": "meldavy",
+  "author": "meldavy (fork by Co0p3r21)",
   "name": "MQTT",
-  "description": "Publish machine state to an MQTT broker and receive control commands. Wire-compatible with the de1app MQTT plugin.",
-  "version": "0.1.5",
+  "description": "Publish machine state to an MQTT broker, receive control commands, and trigger Home Assistant automations via dashboard button. Wire-compatible with the de1app MQTT plugin.",
+  "version": "0.1.6",
   "apiVersion": 1,
   "permissions": [
     "log",
@@ -16,7 +16,10 @@
     "network.websocket"
   ],
   "drivers": [],
-  "api": [],
+  "api": [
+    { "id": "skin", "type": "http", "data": {} },
+    { "id": "trigger", "type": "http", "data": {} }
+  ],
   "settings": {
     "Host": {
       "type": "string",
@@ -67,6 +70,18 @@
       "label": "Enable HA Auto-Discovery",
       "default": false,
       "description": "Publish Home Assistant MQTT discovery entities on broker connect."
+    },
+    "ShowButton": {
+      "type": "boolean",
+      "label": "Show dashboard button",
+      "default": false,
+      "description": "Show a small button on the Streamline dashboard that publishes an MQTT event for Home Assistant."
+    },
+    "ButtonLabel": {
+      "type": "string",
+      "label": "Button label",
+      "default": "🔘",
+      "description": "Emoji or short text shown on the dashboard button (max 24 characters)."
     }
   }
 }

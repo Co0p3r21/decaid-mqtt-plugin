@@ -9,6 +9,7 @@ export const MAX_RECONNECT_DELAY_MS = 64000;
 export function createMqttBridge({ host, config, onCommand, log }) {
   const stateTopic = `${config.topicPrefix}/state`;
   const commandTopic = `${config.topicPrefix}/command`;
+  const eventTopic = `${config.topicPrefix}/event`;
 
   let client = null;
   let reconnectTimer = null;
@@ -127,6 +128,12 @@ export function createMqttBridge({ host, config, onCommand, log }) {
     return true;
   }
 
+  function publishEvent(onPublished) {
+    if (!client) return false;
+    client.publish(eventTopic, JSON.stringify({ event_type: "press" }), { qos: 1, retain: false }, onPublished);
+    return true;
+  }
+
   function publishDiscovery(configs, onDone) {
     if (!client) return false;
     let remaining = configs.length;
@@ -162,6 +169,7 @@ export function createMqttBridge({ host, config, onCommand, log }) {
     stop,
     reset,
     publishState,
+    publishEvent,
     publishDiscovery,
     retractDiscovery,
     get connected() {
@@ -170,7 +178,7 @@ export function createMqttBridge({ host, config, onCommand, log }) {
     get reconnectAttempts() {
       return attempts;
     },
-    topics: { stateTopic, commandTopic },
+    topics: { stateTopic, commandTopic, eventTopic },
     set onConnectedHandler(fn) {
       onConnected = fn;
     },

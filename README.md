@@ -1,5 +1,8 @@
 # decaid-mqtt-plugin
 
+> **Fork by [Co0p3r21](https://github.com/Co0p3r21/decaid-mqtt-plugin)** — based on the original plugin by [meldavy](https://github.com/meldavy/decaid-mqtt-plugin).  
+> Adds **Home Assistant MQTT Auto-Discovery** and a customizable **Dashboard Action Button** for Streamline.
+
 MQTT integration for [Decaid](https://github.com/decentespresso/decaid) —
 publishes machine state to an MQTT broker and accepts control commands.
 Wire-compatible with the de1app MQTT plugin
@@ -13,6 +16,11 @@ Tracking: [decentespresso/decaid#681](https://github.com/decentespresso/decaid/i
 
 ## Features
 
+- **Home Assistant MQTT Auto-Discovery**: Automatically configures entities in
+  Home Assistant (temperature sensors, flow/pressure, shot active, power switch,
+  steam switch, profile selector) with no YAML needed.
+- **Dashboard Action Button**: Customizable quick-action button in the Streamline
+  header bar to trigger Home Assistant automations with a single tap.
 - Publishes machine state to `{topic_prefix}/state` (QoS 1, retained):
   temperatures, pressure, flow, state/substate, profile, usage counts, water
   level — the same 17-field JSON document as the de1app plugin.
@@ -145,15 +153,66 @@ Send plain-text UTF-8 payloads to `{topic_prefix}/command`
 
 Unknown payloads are logged and ignored.
 
+### Dashboard button
+
+The plugin can show a tappable quick-action button in the Streamline header bar
+(next to Settings and Sleep). A tap silently publishes a fixed MQTT message that
+triggers Home Assistant automations.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Show dashboard button | off | Display the button in the header bar |
+| Button label | 🔘 | Emoji or short text (max 24 characters) |
+
+When enabled, the button appears directly in the header controls of Streamline.
+A tap silently publishes `{"event_type":"press"}` to `{topic_prefix}/event` (QoS 1, **not** retained).
+
+#### Home Assistant Integration
+
+When **Enable HA Auto-Discovery** is on, Home Assistant automatically registers the button under your Decent Espresso device:
+- **Device Trigger**: In the automation editor, choose **Trigger → Device → Decent Espresso DE1 → Button button_short_press**. No YAML required!
+- **Event Entity**: `event.de1plus_<unique_id>_button` with event type `press`.
+
+#### Automation example (YAML)
+
+You can trigger automations directly using the auto-discovered event entity:
+
+```yaml
+alias: Turn on kitchen lights when Decaid button pressed
+triggers:
+  - trigger: state
+    entity_id: event.de1plus_abcd1234_button
+    to: ~
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.kitchen
+mode: single
+```
+
+Or trigger from MQTT directly if Auto-Discovery is disabled:
+
+```yaml
+alias: Decaid MQTT button event
+triggers:
+  - trigger: mqtt
+    topic: "de1plus/abcd1234/event"
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.kitchen
+mode: single
+```
+
 ## Install
 
 ### From a GitHub release (tracked, auto-updates)
 
-* To install from your de1, go to plugin settings from the decaid app, and install using github release `meldavy/decaid-mqtt-plugin`.
+* To install on your machine, go to plugin settings from the Decaid app, and install using github release `Co0p3r21/decaid-mqtt-plugin`.
 
 ```
 POST http://<tablet>:8080/api/v1/plugins/install/github-release
-{"repo": "meldavy/decaid-mqtt-plugin"}
+{"repo": "Co0p3r21/decaid-mqtt-plugin"}
 ```
 
 or use the Plugins settings screen in Decaid.
@@ -162,7 +221,7 @@ or use the Plugins settings screen in Decaid.
 
 ```
 POST http://<tablet>:8080/api/v1/plugins/install/github-branch
-{"repo": "meldavy/decaid-mqtt-plugin"}
+{"repo": "Co0p3r21/decaid-mqtt-plugin"}
 ```
 
 ### From a local build
@@ -198,6 +257,9 @@ Configured in Decaid's plugin settings screen:
 | Topic prefix | auto | `de1plus/<unique id>` when empty |
 | Publish interval (ms) | 60000 | Idle heartbeat; mid-shot updates publish at ~1 s |
 | Use TLS | on | Platform certificate validation |
+| Enable HA Auto-Discovery | off | Publish Home Assistant MQTT discovery entities on connect |
+| Show dashboard button | off | Show a tappable button on the Streamline dashboard |
+| Button label | 🔘 | Emoji or short text for the button (max 24 characters) |
 
 Custom CA / mutual TLS is not supported yet — it depends on the plugin
 transport gaining custom trust material
@@ -229,7 +291,8 @@ The suite covers: broker handshake (client id, keepalive, will, MQTT 5 with
 cadence, live shot weight over the scale stream, shot completion records,
 water levels, profile selection, all six commands, unknown/invalid commands,
 broker outage and restart reconnects, last-will offline documents on abnormal
-client death, unload teardown, and broker authentication.
+client death, unload teardown, broker authentication, HA auto-discovery
+publishing and retraction, and the dashboard button skin/trigger endpoints.
 
 CI runs `npm test` only. It is the developer's responsibility to run
 `npm run test:integ` before checking in changes that affect the plugin's

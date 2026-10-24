@@ -166,3 +166,29 @@ test("custom topic prefix is reflected in state and command topics", () => {
   const sw = configs.find((c) => c.payload.command_topic);
   assert.equal(sw.payload.command_topic, "myprefix/command");
 });
+
+test("buildDiscoveryConfigs includes button event and device trigger when showButton is true", () => {
+  const configs = buildDiscoveryConfigs({
+    config: { ...BASE_CONFIG, showButton: true },
+    deviceInfo: null,
+    profileTitles: [],
+  });
+  // 10 sensors + 1 binary_sensor + 2 switches + 1 event + 1 device_automation = 15
+  assert.equal(configs.length, 15);
+
+  const eventEntity = configs.find((c) => c.payload.unique_id === "de1plus_abcd1234_button");
+  assert.ok(eventEntity);
+  assert.equal(eventEntity.topic, `${DISCOVERY_PREFIX}/event/de1plus_abcd1234_button/config`);
+  assert.equal(eventEntity.payload.name, `${ENTITY_NAME_PREFIX}Button`);
+  assert.equal(eventEntity.payload.state_topic, "de1plus/abcd1234/event");
+  assert.deepEqual(eventEntity.payload.event_types, ["press"]);
+  assert.equal(eventEntity.payload.device_class, "button");
+  assert.equal(eventEntity.payload.icon, "mdi:gesture-tap-button");
+
+  const deviceTrigger = configs.find((c) => c.payload.automation_type === "trigger");
+  assert.ok(deviceTrigger);
+  assert.equal(deviceTrigger.topic, `${DISCOVERY_PREFIX}/device_automation/de1plus_abcd1234_button/action/config`);
+  assert.equal(deviceTrigger.payload.type, "button_short_press");
+  assert.equal(deviceTrigger.payload.subtype, "button");
+  assert.equal(deviceTrigger.payload.topic, "de1plus/abcd1234/event");
+});

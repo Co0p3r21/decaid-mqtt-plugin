@@ -149,6 +149,36 @@ export function buildDiscoveryConfigs({ config, deviceInfo, profileTitles }) {
     });
   }
 
+  // Button: event entity & device trigger
+  if (config.showButton) {
+    const eventTopic = `${config.topicPrefix}/event`;
+    configs.push({
+      topic: `${DISCOVERY_PREFIX}/event/${uniqueId(config, "button")}/config`,
+      payload: {
+        name: `${ENTITY_NAME_PREFIX}Button`,
+        unique_id: uniqueId(config, "button"),
+        state_topic: eventTopic,
+        event_types: ["press"],
+        device_class: "button",
+        value_template: "{{ value_json.event_type | default('press') }}",
+        icon: "mdi:gesture-tap-button",
+        device,
+        ...availability(stateTopic),
+      },
+    });
+
+    configs.push({
+      topic: `${DISCOVERY_PREFIX}/device_automation/${uniqueId(config, "button")}/action/config`,
+      payload: {
+        automation_type: "trigger",
+        topic: eventTopic,
+        type: "button_short_press",
+        subtype: "button",
+        device,
+      },
+    });
+  }
+
   return configs;
 }
 

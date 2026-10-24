@@ -193,3 +193,36 @@ test("retracts a legacy profile select when the first post-upgrade profile list 
   ));
   assert.equal(env.broker.retained.has(profileSelectTopic), false);
 });
+
+test("publishes button event and device trigger when ShowButton is enabled", async () => {
+  await env.stop();
+  env = await startE2E({
+    settings: {
+      HaAutoDiscoveryEnable: true,
+      ShowButton: true,
+    },
+    simSetup: (sim) => {
+      sim.state.profiles = [{ profile: { title: "Test Profile" } }];
+    },
+  });
+
+  await waitFor(() => env.broker.subscriptions.length > 0);
+  await waitFor(() => env.broker.publishes.some((p) => p.topic.includes("/event/")));
+
+  const discoveryMessages = env.broker.publishes.filter((p) =>
+    p.topic.startsWith("homeassistant/") && p.topic.endsWith("/config") && p.payload.length > 0
+  );
+  assert.equal(discoveryMessages.length, 16);
+
+  const eventEntity = discoveryMessages.find((m) => m.topic.includes("/event/"));
+  assert.ok(eventEntity);
+  const eventPayload = JSON.parse(eventEntity.payload.toString());
+  assert.equal(eventPayload.device_class, "button");
+  assert.deepEqual(eventPayload.event_types, ["press"]);
+
+  const triggerEntity = discoveryMessages.find((m) => m.topic.includes("/device_automation/"));
+  assert.ok(triggerEntity);
+  const triggerPayload = JSON.parse(triggerEntity.payload.toString());
+  assert.equal(triggerPayload.automation_type, "trigger");
+  assert.equal(triggerPayload.type, "button_short_press");
+});
