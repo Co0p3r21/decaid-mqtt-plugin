@@ -13124,10 +13124,14 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
               }
             });
           }
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><script>try{window.parent.postMessage({type:'streamline:ready'},'*');window.parent.postMessage({type:'streamline:close'},'*');}catch(e){}<\/script></head><body style="background:transparent;margin:0;padding:0;"></body></html>`;
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><script>function s(){try{if(window.parent){window.parent.postMessage({type:'streamline:ready'},'*');window.parent.postMessage({type:'streamline:close'},'*');}if(window.top&&window.top!==window.parent){window.top.postMessage({type:'streamline:ready'},'*');window.top.postMessage({type:'streamline:close'},'*');}}catch(e){}}s();window.addEventListener('DOMContentLoaded',s);window.addEventListener('load',s);<\/script></head><body style="background:transparent;margin:0;padding:0;"></body></html>`;
           return {
             status: 200,
-            headers: { "Content-Type": "text/html; charset=utf-8" },
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Content-Security-Policy": "frame-ancestors *",
+              "X-Frame-Options": "ALLOWALL"
+            },
             body: html
           };
         }
