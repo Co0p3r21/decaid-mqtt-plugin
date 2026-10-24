@@ -62,8 +62,8 @@ test("skin endpoint returns the header-button surface", async () => {
   assert.equal(body.surfaces.length, 1);
   assert.equal(body.surfaces[0].label, "🏠");
   assert.equal(body.surfaces[0].kind, "header-button");
-  assert.equal(body.surfaces[0].action.type, "call");
-  assert.equal(body.surfaces[0].action.endpoint, "trigger");
+  assert.equal(body.surfaces[0].action.type, "open");
+  assert.equal(body.surfaces[0].action.view, "ui");
 });
 
 test("skin returns empty surfaces when ShowButton is disabled", async () => {

@@ -13106,14 +13106,30 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
               label: config.buttonLabel || "\u{1F518}",
               text: "Home Assistant Trigger",
               action: {
-                type: "call",
-                endpoint: "trigger",
-                field: "action",
-                value: 1
+                type: "open",
+                view: "ui",
+                presentation: "overlay",
+                fit: true
               }
             });
           }
           return json(200, { version: 1, surfaces });
+        }
+        if (request.endpoint === "ui") {
+          if (bridge) {
+            bridge.publishEvent((error) => {
+              if (error) {
+                log(`event publish failed: ${error?.message ?? error}`);
+              } else {
+                log("button event published");
+              }
+            });
+          }
+          return {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html><html><head><script>window.parent.postMessage({type:'streamline:close'},'*');<\/script></head><body></body></html>"
+          };
         }
         if (request.endpoint === "trigger") {
           if (!bridge) {

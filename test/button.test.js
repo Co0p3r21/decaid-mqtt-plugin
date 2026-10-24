@@ -67,8 +67,8 @@ test("skin returns header-button when ShowButton is true", async () => {
   const surface = body.surfaces[0];
   assert.equal(surface.kind, "header-button");
   assert.equal(surface.label, "☕");
-  assert.equal(surface.action.type, "call");
-  assert.equal(surface.action.endpoint, "trigger");
+  assert.equal(surface.action.type, "open");
+  assert.equal(surface.action.view, "ui");
 });
 
 test("skin uses default emoji when ButtonLabel is not set", async () => {
