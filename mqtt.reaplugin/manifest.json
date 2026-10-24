@@ -18,7 +18,8 @@
   "drivers": [],
   "api": [
     { "id": "skin", "type": "http", "data": {} },
-    { "id": "trigger", "type": "http", "data": {} }
+    { "id": "trigger", "type": "http", "data": {} },
+    { "id": "ui", "type": "http", "data": {} }
   ],
   "settings": {
     "Host": {
@@ -82,18 +83,6 @@
       "label": "Button label",
       "default": "🔘",
       "description": "Emoji or short text shown on the dashboard button (max 24 characters)."
-    },
-    "ButtonTile": {
-      "type": "string",
-      "label": "Button tile",
-      "default": "drink",
-      "description": "Dashboard tile to place the button on: drink, dose, grind, or temperature."
-    },
-    "ButtonSize": {
-      "type": "string",
-      "label": "Button size",
-      "default": "large",
-      "description": "Size of the button: small, medium, or large."
     }
   }
 }

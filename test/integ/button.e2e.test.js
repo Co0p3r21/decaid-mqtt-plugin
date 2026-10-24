@@ -48,7 +48,7 @@ test("trigger endpoint publishes a non-retained event on <prefix>/event", async 
   assert.equal(msg.qos, 1);
 });
 
-test("skin endpoint returns the tile-hint surface", async () => {
+test("skin endpoint returns the header-button surface", async () => {
   await waitFor(() => env.broker.subscriptions.length > 0);
 
   const response = await env.plugin.plugin.__httpRequestHandler({
@@ -60,11 +60,12 @@ test("skin endpoint returns the tile-hint surface", async () => {
   const body = JSON.parse(response.body);
   assert.equal(body.version, 1);
   assert.equal(body.surfaces.length, 1);
-  assert.equal(body.surfaces[0].text, "🏠");
-  assert.equal(body.surfaces[0].kind, "tile-hint");
-  assert.equal(body.surfaces[0].tile, "drink");
-  assert.equal(body.surfaces[0].action.type, "call");
-  assert.equal(body.surfaces[0].action.endpoint, "trigger");
+  assert.equal(body.surfaces[0].label, "🏠");
+  assert.equal(body.surfaces[0].kind, "header-button");
+  assert.equal(body.surfaces[0].action.type, "open");
+  assert.equal(body.surfaces[0].action.view, "ui");
+  assert.equal(body.surfaces[0].action.presentation, "overlay");
+  assert.equal(body.surfaces[0].action.fit, true);
 });
 
 test("skin returns empty surfaces when ShowButton is disabled", async () => {

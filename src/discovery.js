@@ -160,7 +160,6 @@ export function buildDiscoveryConfigs({ config, deviceInfo, profileTitles }) {
         state_topic: eventTopic,
         event_types: ["press"],
         device_class: "button",
-        value_template: "{{ value_json.event_type | default('press') }}",
         icon: "mdi:gesture-tap-button",
         device,
         ...availability(stateTopic),

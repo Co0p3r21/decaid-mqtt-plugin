@@ -55,7 +55,7 @@ test("skin returns empty surfaces when ShowButton is false", async () => {
   assert.deepEqual(body.surfaces, []);
 });
 
-test("skin returns tile-hint when ShowButton is true", async () => {
+test("skin returns header-button when ShowButton is true", async () => {
   const { plugin } = await loadDisabledPlugin({ ShowButton: true, ButtonLabel: "☕" });
   const response = await plugin.__httpRequestHandler({
     requestId: "r2",
@@ -65,12 +65,12 @@ test("skin returns tile-hint when ShowButton is true", async () => {
   const body = JSON.parse(response.body);
   assert.equal(body.surfaces.length, 1);
   const surface = body.surfaces[0];
-  assert.equal(surface.kind, "tile-hint");
-  assert.equal(surface.tile, "drink");
-  assert.equal(surface.text, "☕");
-  assert.equal(surface.size, "large");
-  assert.equal(surface.action.type, "call");
-  assert.equal(surface.action.endpoint, "trigger");
+  assert.equal(surface.kind, "header-button");
+  assert.equal(surface.label, "☕");
+  assert.equal(surface.action.type, "open");
+  assert.equal(surface.action.view, "ui");
+  assert.equal(surface.action.presentation, "overlay");
+  assert.equal(surface.action.fit, true);
 });
 
 test("skin uses default emoji when ButtonLabel is not set", async () => {
@@ -80,7 +80,7 @@ test("skin uses default emoji when ButtonLabel is not set", async () => {
     endpoint: "skin",
   });
   const body = JSON.parse(response.body);
-  assert.equal(body.surfaces[0].text, "🔘");
+  assert.equal(body.surfaces[0].label, "🔘");
 });
 
 // ── trigger endpoint ───────────────────────────────────────────────

@@ -7,31 +7,12 @@ export const DISCOVERY_TOPICS_KEY = "discoveryTopics";
 export const DEFAULT_BUTTON_LABEL = "🔘";
 export const MAX_BUTTON_LABEL_LENGTH = 24;
 
-export const DEFAULT_BUTTON_TILE = "drink";
-export const DEFAULT_BUTTON_SIZE = "large";
-export const VALID_BUTTON_TILES = ["drink", "dose", "grind", "temperature"];
-export const VALID_BUTTON_SIZES = ["small", "medium", "large"];
-
 function normalizeButtonLabel(raw) {
   if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_BUTTON_LABEL;
   const trimmed = raw.trim();
   return trimmed.length > MAX_BUTTON_LABEL_LENGTH
     ? trimmed.slice(0, MAX_BUTTON_LABEL_LENGTH)
     : trimmed;
-}
-
-function normalizeButtonTile(raw) {
-  if (typeof raw === "string" && VALID_BUTTON_TILES.includes(raw.toLowerCase().trim())) {
-    return raw.toLowerCase().trim();
-  }
-  return DEFAULT_BUTTON_TILE;
-}
-
-function normalizeButtonSize(raw) {
-  if (typeof raw === "string" && VALID_BUTTON_SIZES.includes(raw.toLowerCase().trim())) {
-    return raw.toLowerCase().trim();
-  }
-  return DEFAULT_BUTTON_SIZE;
 }
 
 export function generateUniqueId() {
@@ -91,8 +72,6 @@ export function normalizeConfig(raw, storedUniqueId) {
       haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable),
       showButton: Boolean(raw.ShowButton),
       buttonLabel: normalizeButtonLabel(raw.ButtonLabel),
-      buttonTile: normalizeButtonTile(raw.ButtonTile),
-      buttonSize: normalizeButtonSize(raw.ButtonSize),
     },
   };
 }
