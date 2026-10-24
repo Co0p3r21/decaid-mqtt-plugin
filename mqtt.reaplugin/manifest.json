@@ -3,7 +3,7 @@
   "author": "meldavy (fork by Co0p3r21)",
   "name": "MQTT",
   "description": "Publish machine state to an MQTT broker, receive control commands, and trigger Home Assistant automations via dashboard button. Wire-compatible with the de1app MQTT plugin.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "apiVersion": 1,
   "permissions": [
     "log",
