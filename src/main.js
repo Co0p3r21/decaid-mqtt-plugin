@@ -420,36 +420,20 @@ export function createPlugin(host) {
         const surfaces = [];
         if (config?.showButton) {
           surfaces.push({
-            id: "mqtt-header-btn",
-            kind: "header-button",
-            label: config.buttonLabel || "🔘",
-            text: "Home Assistant Trigger",
+            id: "mqtt-btn",
+            kind: "tile-hint",
+            tile: config.buttonTile || "drink",
+            text: config.buttonLabel || "🔘",
+            size: config.buttonSize || "large",
             action: {
-              type: "open",
-              view: "ui",
-              presentation: "overlay",
-              fit: true,
+              type: "call",
+              endpoint: "trigger",
+              field: "action",
+              value: 1,
             },
           });
         }
         return json(200, { version: 1, surfaces });
-      }
-
-      if (request.endpoint === "ui") {
-        if (bridge) {
-          bridge.publishEvent((error) => {
-            if (error) {
-              log(`event publish failed: ${error?.message ?? error}`);
-            } else {
-              log("button event published");
-            }
-          });
-        }
-        return {
-          status: 200,
-          headers: { "Content-Type": "text/html" },
-          body: "<!DOCTYPE html><html><head><script>window.parent.postMessage({type:'streamline:close'},'*');</script></head><body></body></html>",
-        };
       }
 
       if (request.endpoint === "trigger") {

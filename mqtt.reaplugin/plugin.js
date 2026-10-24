@@ -78,10 +78,26 @@ var __mqttBundle = (() => {
   var DISCOVERY_TOPICS_KEY = "discoveryTopics";
   var DEFAULT_BUTTON_LABEL = "\u{1F518}";
   var MAX_BUTTON_LABEL_LENGTH = 24;
+  var DEFAULT_BUTTON_TILE = "drink";
+  var DEFAULT_BUTTON_SIZE = "large";
+  var VALID_BUTTON_TILES = ["drink", "dose", "grind", "temperature"];
+  var VALID_BUTTON_SIZES = ["small", "medium", "large"];
   function normalizeButtonLabel(raw) {
     if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_BUTTON_LABEL;
     const trimmed = raw.trim();
     return trimmed.length > MAX_BUTTON_LABEL_LENGTH ? trimmed.slice(0, MAX_BUTTON_LABEL_LENGTH) : trimmed;
+  }
+  function normalizeButtonTile(raw) {
+    if (typeof raw === "string" && VALID_BUTTON_TILES.includes(raw.toLowerCase().trim())) {
+      return raw.toLowerCase().trim();
+    }
+    return DEFAULT_BUTTON_TILE;
+  }
+  function normalizeButtonSize(raw) {
+    if (typeof raw === "string" && VALID_BUTTON_SIZES.includes(raw.toLowerCase().trim())) {
+      return raw.toLowerCase().trim();
+    }
+    return DEFAULT_BUTTON_SIZE;
   }
   function generateUniqueId() {
     const randomValue = Math.floor(Math.random() * 4294967295);
@@ -126,7 +142,9 @@ var __mqttBundle = (() => {
         uniqueId: uniqueId2,
         haAutoDiscoveryEnable: Boolean(raw.HaAutoDiscoveryEnable),
         showButton: Boolean(raw.ShowButton),
-        buttonLabel: normalizeButtonLabel(raw.ButtonLabel)
+        buttonLabel: normalizeButtonLabel(raw.ButtonLabel),
+        buttonTile: normalizeButtonTile(raw.ButtonTile),
+        buttonSize: normalizeButtonSize(raw.ButtonSize)
       }
     };
   }
@@ -13101,35 +13119,20 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
           const surfaces = [];
           if (config?.showButton) {
             surfaces.push({
-              id: "mqtt-header-btn",
-              kind: "header-button",
-              label: config.buttonLabel || "\u{1F518}",
-              text: "Home Assistant Trigger",
+              id: "mqtt-btn",
+              kind: "tile-hint",
+              tile: config.buttonTile || "drink",
+              text: config.buttonLabel || "\u{1F518}",
+              size: config.buttonSize || "large",
               action: {
-                type: "open",
-                view: "ui",
-                presentation: "overlay",
-                fit: true
+                type: "call",
+                endpoint: "trigger",
+                field: "action",
+                value: 1
               }
             });
           }
           return json(200, { version: 1, surfaces });
-        }
-        if (request.endpoint === "ui") {
-          if (bridge) {
-            bridge.publishEvent((error) => {
-              if (error) {
-                log(`event publish failed: ${error?.message ?? error}`);
-              } else {
-                log("button event published");
-              }
-            });
-          }
-          return {
-            status: 200,
-            headers: { "Content-Type": "text/html" },
-            body: "<!DOCTYPE html><html><head><script>window.parent.postMessage({type:'streamline:close'},'*');<\/script></head><body></body></html>"
-          };
         }
         if (request.endpoint === "trigger") {
           if (!bridge) {

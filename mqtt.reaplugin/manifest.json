@@ -3,7 +3,7 @@
   "author": "meldavy (fork by Co0p3r21)",
   "name": "MQTT",
   "description": "Publish machine state to an MQTT broker, receive control commands, and trigger Home Assistant automations via dashboard button. Wire-compatible with the de1app MQTT plugin.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "apiVersion": 1,
   "permissions": [
     "log",
@@ -18,8 +18,7 @@
   "drivers": [],
   "api": [
     { "id": "skin", "type": "http", "data": {} },
-    { "id": "trigger", "type": "http", "data": {} },
-    { "id": "ui", "type": "http", "data": {} }
+    { "id": "trigger", "type": "http", "data": {} }
   ],
   "settings": {
     "Host": {
@@ -83,6 +82,18 @@
       "label": "Button label",
       "default": "🔘",
       "description": "Emoji or short text shown on the dashboard button (max 24 characters)."
+    },
+    "ButtonTile": {
+      "type": "string",
+      "label": "Button tile",
+      "default": "drink",
+      "description": "Dashboard tile to place the button on: drink, dose, grind, or temperature."
+    },
+    "ButtonSize": {
+      "type": "string",
+      "label": "Button size",
+      "default": "large",
+      "description": "Size of the button: small, medium, or large."
     }
   }
 }
